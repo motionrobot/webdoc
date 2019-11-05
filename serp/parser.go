@@ -53,49 +53,49 @@ type ResultJson struct {
 }
 */
 
-type SRPParser struct {
+type SERPParser struct {
 	resultRoot    *html.Node
 	resultNodes   []*html.Node
 	curResultNode *html.Node
 	resultPage    *pb.GenericSearchResponse
 }
 
-func NewSRPParser() *SRPParser {
-	return &SRPParser{
+func NewSERPParser() *SERPParser {
+	return &SERPParser{
 		resultNodes: make([]*html.Node, 0),
 		resultPage:  NewResultPage()}
 }
 
-func (p *SRPParser) Reset() {
+func (p *SERPParser) Reset() {
 	p.resultRoot = nil
 	p.curResultNode = nil
 	p.resultNodes = make([]*html.Node, 0)
 	p.resultPage = NewResultPage()
 }
 
-func (p *SRPParser) Finalize() {
+func (p *SERPParser) Finalize() {
 	if p.resultPage != nil {
 		glog.V(0).Infof("Result page:\n%s", proto.MarshalTextString(p.resultPage))
 	}
 }
 
-func (p *SRPParser) GetCurResult() *pb.Result {
+func (p *SERPParser) GetCurResult() *pb.Result {
 	if len(p.resultPage.Results) == 0 {
 		return nil
 	}
 	return p.resultPage.GetResults()[len(p.resultPage.Results)-1]
 }
 
-func (p *SRPParser) ParseFile(fn string) {
+func (p *SERPParser) ParseFile(fn string) *pb.GenericSearchResponse {
 	f, err := os.Open(fn)
 	if err != nil {
 		glog.Fatal(err)
 	}
 	reader := bufio.NewReader(f)
-	p.Parse(reader)
+	return p.Parse(reader)
 }
 
-func (p *SRPParser) Parse(r io.Reader) {
+func (p *SERPParser) Parse(r io.Reader) *pb.GenericSearchResponse {
 	p.Reset()
 	doc, err := html.Parse(r)
 	if err != nil {
@@ -103,9 +103,10 @@ func (p *SRPParser) Parse(r io.Reader) {
 	}
 	p.ProcessNode(doc)
 	p.Finalize()
+	return p.resultPage
 }
 
-func (p *SRPParser) ProcessNode(n *html.Node) {
+func (p *SERPParser) ProcessNode(n *html.Node) {
 	displayPath := pu.GetDisplayAncestors(n)
 	interested := false
 	isResultNode := false
@@ -174,7 +175,7 @@ func FillResultWithJson(result *pb.Result, resultJson *ResultJson) {
 	result.Site = resultJson.Site
 }
 
-func (p *SRPParser) ParseResultJson(node *html.Node) (*ResultJson, error) {
+func (p *SERPParser) ParseResultJson(node *html.Node) (*ResultJson, error) {
 	if node.Type != html.TextNode {
 		return nil, nil
 	}
