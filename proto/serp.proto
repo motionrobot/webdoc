@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package serpproto;
+
+option go_package = "github.com/motionrobot/webdoc/proto";
+
+message Result {
+  uint32 pos = 1;
+  string url = 2;
+  string image_url = 3;
+  string snippet = 4;
+  string site = 5;
+  string thumbnail_url = 6;
+}
+
+message GenericSearchResponse {
+  enum SearchType {
+    SEARCH_TYPE_UNKNOWN = 0;
+    GOOGLE = 1;
+    BING = 2;
+  }
+  enum SearchVertical {
+    VERTICAL_UNKNOWN = 0;
+    WEB = 1;
+    IMAGE = 2;
+  }
+  string query = 1;
+  string ParsedQuery = 2;
+  string url = 3;
+  uint32 start_pos = 4;
+  repeated Result results = 10;
+}
