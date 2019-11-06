@@ -31,3 +31,8 @@ message GenericSearchResponse {
   uint32 start_pos = 4;
   repeated Result results = 10;
 }
+
+message SERPScrapeInfo {
+  GenericSearchResponse result_page = 1;
+  map<uint32, string> cached_files = 2;
+}

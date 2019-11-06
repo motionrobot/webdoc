@@ -2,6 +2,7 @@ package serp
 
 import (
 	"compress/gzip"
+	"flag"
 	"fmt"
 	"github.com/golang/glog"
 	pb "github.com/motionrobot/webdoc/proto"
@@ -20,6 +21,13 @@ import (
 		"golang.org/x/net/html"
 		"strconv"
 	*/)
+
+var (
+	scrapeOutputFilePtr = flag.String(
+		"scrape_output_file",
+		"",
+		"The output file")
+)
 
 type SERPScrapeResult struct {
 	ResultPage  *pb.GenericSearchResponse
