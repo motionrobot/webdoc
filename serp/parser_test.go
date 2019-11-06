@@ -10,6 +10,8 @@ func TestImageSearchParser(t *testing.T) {
 	for _, fn := range files {
 		glog.Infof("Testing file %s", fn)
 		p := NewSERPParser()
+		p.Reset()
 		p.ParseFile(fn)
+		p.Finalize()
 	}
 }

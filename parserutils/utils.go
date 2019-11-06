@@ -1,11 +1,23 @@
 package parserutils
 
 import (
+	"errors"
 	"fmt"
 	"github.com/golang/glog"
 	"golang.org/x/net/html"
+	"io"
+	"strconv"
 	"strings"
 )
+
+var ErrAttrNotFound = errors.New("not found")
+var ErrAttrMalFormatted = errors.New("mal formatted")
+
+type Parser interface {
+	Reset()
+	Parse(r io.Reader) error
+	Finalize()
+}
 
 func GetAttribute(n *html.Node, attr string) *html.Attribute {
 	for _, a := range n.Attr {
@@ -14,6 +26,26 @@ func GetAttribute(n *html.Node, attr string) *html.Attribute {
 		}
 	}
 	return nil
+}
+
+func GetAttributeValue(n *html.Node, attr string) (string, error) {
+	a := GetAttribute(n, attr)
+	if a != nil {
+		return a.Val, nil
+	}
+	return "", ErrAttrNotFound
+}
+
+func GetAttributeIntValue(n *html.Node, attr string) (int64, error) {
+	val, err := GetAttributeValue(n, attr)
+	if err != nil {
+		return 0, err
+	}
+	intVal, err := strconv.ParseInt(val, 10, 64)
+	if err != nil {
+		return 0, ErrAttrMalFormatted
+	}
+	return intVal, nil
 }
 
 func AttributeValueMatch(n *html.Node, attr string, value string) *html.Attribute {

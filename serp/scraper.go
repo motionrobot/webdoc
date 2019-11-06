@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 	/*
@@ -20,10 +21,15 @@ import (
 		"strconv"
 	*/)
 
+type SERPScrapeResult struct {
+	ResultPage  *pb.GenericSearchResponse
+	CachedFiles map[uint32]string
+}
+
 type SERPScraper struct {
 	serpParser *SERPParser
 	client     *http.Client
-	//resultParser *ResultParser
+	result     *SERPScrapeResult
 }
 
 func NewSERPScraper() *SERPScraper {
@@ -32,17 +38,33 @@ func NewSERPScraper() *SERPScraper {
 		client: &http.Client{
 			Timeout: 10 * time.Second,
 		},
+		result: &SERPScrapeResult{},
 	}
 }
 
-func (s *SERPScraper) ScrapeSERPFile(fn string) {
-	resultPage := s.serpParser.ParseFile(fn)
-	for _, result := range resultPage.GetResults() {
+func (s *SERPScraper) ScrapeSERPFile(fn string) *SERPScrapeResult {
+	s.result = &SERPScrapeResult{CachedFiles: make(map[uint32]string)}
+	s.serpParser.Reset()
+	defer s.serpParser.Finalize()
+	if err := s.serpParser.ParseFile(fn); err != nil {
+		glog.Fatal(err)
+	}
+	s.result.ResultPage = s.serpParser.GetResultPage()
+	baseName, err := filepath.Abs(fn)
+	if err != nil {
+		glog.Fatal(err)
+	}
+	ext := filepath.Ext(baseName)
+	if len(ext) > 0 {
+		baseName = baseName[:strings.LastIndex(baseName, ext)]
+	}
+
+	for _, result := range s.result.ResultPage.GetResults() {
 		data, err := s.ScrapeResult(result)
 		if err != nil || data == nil {
 			continue
 		}
-		tmpFileName := fmt.Sprintf("%s_%d", fn, result.Pos)
+		tmpFileName := fmt.Sprintf("%s_result_%d%s", baseName, result.Pos, ext)
 		glog.V(0).Infof("Writing to file %s", tmpFileName)
 		tmpFile, err := os.Create(tmpFileName)
 		if err != nil {
@@ -56,12 +78,15 @@ func (s *SERPScraper) ScrapeSERPFile(fn string) {
 			glog.Fatal("Data written wrong size")
 		}
 		tmpFile.Close()
+		s.result.CachedFiles[result.GetPos()] = tmpFileName
 	}
+	return s.result
 }
 
 func (s *SERPScraper) ScrapeResult(result *pb.Result) ([]byte, error) {
 	glog.V(0).Infof("Scraping %s", result.Url)
 	request, err := http.NewRequest("GET", result.Url, nil)
+	request.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/44.0.2403.157 Safari/537.36")
 	if err != nil {
 		glog.Infof("Failed to build request %s: %v", result.Url, err)
 	}

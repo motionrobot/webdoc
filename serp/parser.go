@@ -73,20 +73,7 @@ func (p *SERPParser) Reset() {
 	p.resultPage = NewResultPage()
 }
 
-func (p *SERPParser) Finalize() {
-	if p.resultPage != nil {
-		glog.V(0).Infof("Result page:\n%s", proto.MarshalTextString(p.resultPage))
-	}
-}
-
-func (p *SERPParser) GetCurResult() *pb.Result {
-	if len(p.resultPage.Results) == 0 {
-		return nil
-	}
-	return p.resultPage.GetResults()[len(p.resultPage.Results)-1]
-}
-
-func (p *SERPParser) ParseFile(fn string) *pb.GenericSearchResponse {
+func (p *SERPParser) ParseFile(fn string) error {
 	f, err := os.Open(fn)
 	if err != nil {
 		glog.Fatal(err)
@@ -95,15 +82,30 @@ func (p *SERPParser) ParseFile(fn string) *pb.GenericSearchResponse {
 	return p.Parse(reader)
 }
 
-func (p *SERPParser) Parse(r io.Reader) *pb.GenericSearchResponse {
-	p.Reset()
+func (p *SERPParser) Parse(r io.Reader) error {
 	doc, err := html.Parse(r)
 	if err != nil {
 		glog.Fatal(err)
 	}
 	p.ProcessNode(doc)
-	p.Finalize()
+	return nil
+}
+
+func (p *SERPParser) Finalize() {
+	if p.resultPage != nil {
+		glog.V(0).Infof("Result page:\n%s", proto.MarshalTextString(p.resultPage))
+	}
+}
+
+func (p *SERPParser) GetResultPage() *pb.GenericSearchResponse {
 	return p.resultPage
+}
+
+func (p *SERPParser) GetCurResult() *pb.Result {
+	if len(p.resultPage.Results) == 0 {
+		return nil
+	}
+	return p.resultPage.GetResults()[len(p.resultPage.Results)-1]
 }
 
 func (p *SERPParser) ProcessNode(n *html.Node) {
