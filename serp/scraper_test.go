@@ -8,9 +8,10 @@ import (
 func TestImageSearchScraper(t *testing.T) {
 	files := []string{"/home/zheng/work/data/srp1.html",
 		"/home/zheng/work/data/srp2.html"}
+	p := NewSERPScraper()
+	defer p.Close()
 	for _, fn := range files {
 		glog.Infof("Testing file %s", fn)
-		p := NewSERPScraper()
 		p.ScrapeSERPFile(fn)
 	}
 }

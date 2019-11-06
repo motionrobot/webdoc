@@ -1,12 +1,20 @@
 package extractor
 
 import (
+	"flag"
 	"github.com/golang/glog"
 	"github.com/golang/protobuf/proto"
 	pu "github.com/motionrobot/webdoc/parserutils"
 	pb "github.com/motionrobot/webdoc/proto"
 	"golang.org/x/net/html"
 	"io"
+)
+
+var (
+	serpScrapeInfoFilePtr = flag.String(
+		"serp_scrape_info_file",
+		"",
+		"The input file")
 )
 
 type ImageExtractor struct {

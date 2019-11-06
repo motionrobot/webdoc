@@ -1,10 +1,13 @@
 package serp
 
 import (
+	"bufio"
 	"compress/gzip"
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"github.com/golang/glog"
+	"github.com/golang/protobuf/proto"
 	pb "github.com/motionrobot/webdoc/proto"
 	"io"
 	"io/ioutil"
@@ -29,29 +32,47 @@ var (
 		"The output file")
 )
 
-type SERPScrapeResult struct {
-	ResultPage  *pb.GenericSearchResponse
-	CachedFiles map[uint32]string
-}
-
 type SERPScraper struct {
 	serpParser *SERPParser
 	client     *http.Client
-	result     *SERPScrapeResult
+	result     *pb.SERPScrapeInfo
+	outFile    *os.File
+	writer     *bufio.Writer
 }
 
 func NewSERPScraper() *SERPScraper {
+	var outFile *os.File
+	var writer *bufio.Writer
+	var err error
+	if len(*scrapeOutputFilePtr) > 0 {
+		outFile, err = os.Create(*scrapeOutputFilePtr)
+		if err != nil {
+			glog.Fatal(err)
+		}
+		writer = bufio.NewWriter(outFile)
+	}
 	return &SERPScraper{
 		serpParser: NewSERPParser(),
 		client: &http.Client{
 			Timeout: 10 * time.Second,
 		},
-		result: &SERPScrapeResult{},
+		result:  &pb.SERPScrapeInfo{},
+		outFile: outFile,
+		writer:  writer,
 	}
 }
 
-func (s *SERPScraper) ScrapeSERPFile(fn string) *SERPScrapeResult {
-	s.result = &SERPScrapeResult{CachedFiles: make(map[uint32]string)}
+func (s *SERPScraper) Close() {
+	if s.writer != nil {
+		s.writer.Flush()
+	}
+	if s.outFile != nil {
+		s.outFile.Close()
+	}
+}
+
+func (s *SERPScraper) ScrapeSERPFile(fn string) *pb.SERPScrapeInfo {
+	s.result = &pb.SERPScrapeInfo{CachedFiles: make(map[uint32]string)}
 	s.serpParser.Reset()
 	defer s.serpParser.Finalize()
 	if err := s.serpParser.ParseFile(fn); err != nil {
@@ -88,6 +109,16 @@ func (s *SERPScraper) ScrapeSERPFile(fn string) *SERPScrapeResult {
 		tmpFile.Close()
 		s.result.CachedFiles[result.GetPos()] = tmpFileName
 	}
+
+	if s.writer != nil {
+		data, err := proto.Marshal(s.result)
+		if err != nil {
+			glog.Fatal(err)
+		}
+		s.writer.WriteString(base64.StdEncoding.EncodeToString(data))
+		s.writer.WriteString("\n")
+	}
+
 	return s.result
 }
 
