@@ -71,7 +71,7 @@ func main() {
 		reader := bufio.NewReader(f)
 		for _, p := range parsers {
 			p.Reset()
-			if err := p.Parse(reader); err != nil {
+			if err := p.Parse(reader, nil); err != nil {
 				glog.Fatal(err)
 			}
 			p.Finalize()

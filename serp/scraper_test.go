@@ -6,8 +6,10 @@ import (
 )
 
 func TestImageSearchScraper(t *testing.T) {
-	files := []string{"/home/zheng/work/data/srp1.html",
-		"/home/zheng/work/data/srp2.html"}
+	files := []string{
+		"/home/zheng/work/data/scraper/srp1.html",
+		"/home/zheng/work/data/scraper/srp2.html",
+	}
 	p := NewSERPScraper()
 	defer p.Close()
 	for _, fn := range files {

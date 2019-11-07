@@ -1,11 +1,15 @@
 package parserutils
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"github.com/golang/glog"
+	pb "github.com/motionrobot/webdoc/proto"
 	"golang.org/x/net/html"
 	"io"
+	"net/url"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -15,8 +19,17 @@ var ErrAttrMalFormatted = errors.New("mal formatted")
 
 type Parser interface {
 	Reset()
-	Parse(r io.Reader) error
+	Parse(io.Reader, *pb.CompositeDoc) error
 	Finalize()
+}
+
+func ParseFile(fn string, p Parser, doc *pb.CompositeDoc) error {
+	f, err := os.Open(fn)
+	if err != nil {
+		glog.Fatal(err)
+	}
+	reader := bufio.NewReader(f)
+	return p.Parse(reader, doc)
 }
 
 func GetAttribute(n *html.Node, attr string) *html.Attribute {
@@ -182,4 +195,29 @@ func GetDisplayDescendants(node *html.Node) string {
 	b.Grow(32)
 	BuildDisplayDescendants(node, &b)
 	return b.String()
+}
+
+func FixUrl(rawurl string) string {
+	return strings.TrimSpace(rawurl)
+}
+
+func GetAbsUrl(baseUrl *url.URL, ref string) (*url.URL, error) {
+	var resultUrl *url.URL
+	var err error
+	fixedRef := FixUrl(ref)
+	glog.V(1).Infof("Maybe fix relative url %s with %s",
+		fixedRef, baseUrl.String())
+	resultUrl, err = url.Parse(fixedRef)
+	if err != nil {
+		return nil, err
+	}
+	if !resultUrl.IsAbs() {
+		glog.V(1).Infof("Found relative url %s", ref)
+		resultUrl, err = baseUrl.Parse(resultUrl.String())
+		if err != nil {
+			return nil, err
+		}
+		glog.V(1).Infof("Absolute URL is %s", resultUrl.String())
+	}
+	return resultUrl, nil
 }

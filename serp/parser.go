@@ -1,7 +1,6 @@
 package serp
 
 import (
-	"bufio"
 	"encoding/json"
 	"github.com/golang/glog"
 	"github.com/golang/protobuf/proto"
@@ -9,7 +8,6 @@ import (
 	pb "github.com/motionrobot/webdoc/proto"
 	"golang.org/x/net/html"
 	"io"
-	"os"
 	"strconv"
 )
 
@@ -73,16 +71,7 @@ func (p *SERPParser) Reset() {
 	p.resultPage = NewResultPage()
 }
 
-func (p *SERPParser) ParseFile(fn string) error {
-	f, err := os.Open(fn)
-	if err != nil {
-		glog.Fatal(err)
-	}
-	reader := bufio.NewReader(f)
-	return p.Parse(reader)
-}
-
-func (p *SERPParser) Parse(r io.Reader) error {
+func (p *SERPParser) Parse(r io.Reader, cdoc *pb.CompositeDoc) error {
 	doc, err := html.Parse(r)
 	if err != nil {
 		glog.Fatal(err)

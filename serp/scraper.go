@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/golang/glog"
 	"github.com/golang/protobuf/proto"
+	pu "github.com/motionrobot/webdoc/parserutils"
 	pb "github.com/motionrobot/webdoc/proto"
 	"io"
 	"io/ioutil"
@@ -16,14 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	/*
-		"bufio"
-		"encoding/json"
-		"github.com/golang/protobuf/proto"
-		pu "github.com/motionrobot/webdoc/parserutils"
-		"golang.org/x/net/html"
-		"strconv"
-	*/)
+)
 
 var (
 	scrapeOutputFilePtr = flag.String(
@@ -75,7 +69,7 @@ func (s *SERPScraper) ScrapeSERPFile(fn string) *pb.SERPScrapeInfo {
 	s.result = &pb.SERPScrapeInfo{CachedFiles: make(map[uint32]string)}
 	s.serpParser.Reset()
 	defer s.serpParser.Finalize()
-	if err := s.serpParser.ParseFile(fn); err != nil {
+	if err := pu.ParseFile(fn, s.serpParser, nil); err != nil {
 		glog.Fatal(err)
 	}
 	s.result.ResultPage = s.serpParser.GetResultPage()
@@ -111,6 +105,8 @@ func (s *SERPScraper) ScrapeSERPFile(fn string) *pb.SERPScrapeInfo {
 	}
 
 	if s.writer != nil {
+		glog.V(0).Infof("Scraping result:\n%s",
+			proto.MarshalTextString(s.result))
 		data, err := proto.Marshal(s.result)
 		if err != nil {
 			glog.Fatal(err)
