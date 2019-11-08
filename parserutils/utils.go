@@ -32,6 +32,7 @@ func ParseFile(fn string, p Parser, doc *pb.CompositeDoc) error {
 	return p.Parse(reader, doc)
 }
 
+// Attributes
 func GetAttribute(n *html.Node, attr string) *html.Attribute {
 	for _, a := range n.Attr {
 		if a.Key == attr {
@@ -44,7 +45,7 @@ func GetAttribute(n *html.Node, attr string) *html.Attribute {
 func GetAttributeValue(n *html.Node, attr string) (string, error) {
 	a := GetAttribute(n, attr)
 	if a != nil {
-		return a.Val, nil
+		return strings.TrimSpace(a.Val), nil
 	}
 	return "", ErrAttrNotFound
 }
@@ -90,6 +91,71 @@ func AttributeValueContains(n *html.Node, attr string, value string) *html.Attri
 	return nil
 }
 
+func BuildDisplayAttribute(attr html.Attribute, b *strings.Builder, level int) {
+	fmt.Fprintf(b, strings.Repeat("  ", level))
+	fmt.Fprintf(b, "%s:%s %s\n", attr.Namespace, attr.Key, attr.Val)
+}
+
+func GetDisplayAttribute(attr html.Attribute, level int) string {
+	var b strings.Builder
+	b.Grow(32)
+	BuildDisplayAttribute(attr, &b, level)
+	return b.String()
+}
+
+func GetDisplayAttributes(node *html.Node) string {
+	var b strings.Builder
+	b.Grow(32)
+	for _, attr := range node.Attr {
+		BuildDisplayAttribute(attr, &b, 0)
+	}
+	return b.String()
+}
+
+func ParseSrcSet(srcset string) ([]*pb.ImageSrcEle, error) {
+	imgSrcEles := make([]*pb.ImageSrcEle, 0)
+	segments := strings.Split(strings.TrimSpace(srcset), ", ")
+	for _, segment := range segments {
+		segs := strings.Split(segment, " ")
+		if len(segs) > 2 {
+			return nil, ErrAttrMalFormatted
+		}
+		imgSrcEle := &pb.ImageSrcEle{}
+		imgSrcEle.Url = segs[0]
+		if len(segs) == 2 {
+			imgSrcEle.SizeDesc = segs[1]
+		}
+		imgSrcEles = append(imgSrcEles, imgSrcEle)
+	}
+	return imgSrcEles, nil
+}
+
+func FixUrl(rawurl string) string {
+	return strings.TrimSpace(rawurl)
+}
+
+func GetAbsUrl(baseUrl *url.URL, ref string) (*url.URL, error) {
+	var resultUrl *url.URL
+	var err error
+	fixedRef := FixUrl(ref)
+	glog.V(1).Infof("Maybe fix relative url %s with %s",
+		fixedRef, baseUrl.String())
+	resultUrl, err = url.Parse(fixedRef)
+	if err != nil {
+		return nil, err
+	}
+	if !resultUrl.IsAbs() {
+		glog.V(1).Infof("Found relative url %s", ref)
+		resultUrl, err = baseUrl.Parse(resultUrl.String())
+		if err != nil {
+			return nil, err
+		}
+		glog.V(1).Infof("Absolute URL is %s", resultUrl.String())
+	}
+	return resultUrl, nil
+}
+
+// Ancestors and descendents
 func IsAncestor(a *html.Node, d *html.Node) bool {
 	n := d
 	for n != nil && n.Type != html.DocumentNode {
@@ -195,29 +261,4 @@ func GetDisplayDescendants(node *html.Node) string {
 	b.Grow(32)
 	BuildDisplayDescendants(node, &b)
 	return b.String()
-}
-
-func FixUrl(rawurl string) string {
-	return strings.TrimSpace(rawurl)
-}
-
-func GetAbsUrl(baseUrl *url.URL, ref string) (*url.URL, error) {
-	var resultUrl *url.URL
-	var err error
-	fixedRef := FixUrl(ref)
-	glog.V(1).Infof("Maybe fix relative url %s with %s",
-		fixedRef, baseUrl.String())
-	resultUrl, err = url.Parse(fixedRef)
-	if err != nil {
-		return nil, err
-	}
-	if !resultUrl.IsAbs() {
-		glog.V(1).Infof("Found relative url %s", ref)
-		resultUrl, err = baseUrl.Parse(resultUrl.String())
-		if err != nil {
-			return nil, err
-		}
-		glog.V(1).Infof("Absolute URL is %s", resultUrl.String())
-	}
-	return resultUrl, nil
 }

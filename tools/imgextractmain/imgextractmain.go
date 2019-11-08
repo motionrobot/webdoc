@@ -43,7 +43,7 @@ func main() {
 	slr.ProcessLines()
 
 	ie := extractor.NewImageExtractor()
-	cdocs := make([]*pb.CompositeDoc, 0)
+	cdocs := make(map[string]*pb.CompositeDoc)
 	for _, scrapeInfo := range scrapeInfos {
 		for _, result := range scrapeInfo.GetResultPage().GetResults() {
 			fn, exist := scrapeInfo.GetCachedFiles()[result.GetPos()]
@@ -57,15 +57,42 @@ func main() {
 			ie.Reset()
 			cdoc := &pb.CompositeDoc{}
 			cdoc.Url = result.GetUrl()
-			cdocs = append(cdocs, cdoc)
+			cdocs[cdoc.GetUrl()] = cdoc
 			if err := pu.ParseFile(fn, ie, cdoc); err != nil {
 				glog.Fatal(err)
 			}
 			ie.Finalize()
 		}
 	}
-	for _, cdoc := range cdocs {
-		glog.V(0).Infof("All composite docs:\n%s", proto.MarshalTextString(cdoc))
+	for _, scrapeInfo := range scrapeInfos {
+		for _, result := range scrapeInfo.GetResultPage().GetResults() {
+			if len(result.GetImageUrl()) == 0 {
+				utils.IncrementCounterNS("result", "no-image-url")
+				continue
+			}
+			cdoc, exist := cdocs[result.GetUrl()]
+			if !exist {
+				continue
+			}
+			glog.V(0).Infof("Composite doc from cached file %s:\n%s",
+				scrapeInfo.GetCachedFiles()[result.GetPos()],
+				proto.MarshalTextString(cdoc))
+			var matchedImgEle *pb.ImageElement
+			for _, imgEle := range cdoc.GetImages() {
+				if imgEle.GetUrl() == result.GetImageUrl() {
+					matchedImgEle = imgEle
+					break
+				}
+			}
+			if matchedImgEle != nil {
+				glog.V(0).Infof("Image Found:%s",
+					proto.MarshalTextString(matchedImgEle))
+				utils.IncrementCounterNS("result", "image-url-found")
+			} else {
+				utils.IncrementCounterNS("result", "image-url-missing")
+				glog.V(0).Infof("Image Missing:%s", result.GetImageUrl())
+			}
+		}
 	}
 	utils.PrintCounters()
 }
