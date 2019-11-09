@@ -21,8 +21,8 @@ var (
 )
 
 type ImageExtractor struct {
-	cdoc *pb.CompositeDoc
-	url  *url.URL
+	cdoc   *pb.CompositeDoc
+	docUrl *url.URL
 }
 
 func NewImageExtractor() *ImageExtractor {
@@ -50,7 +50,7 @@ func (ie *ImageExtractor) Parse(r io.Reader, cdoc *pb.CompositeDoc) error {
 		glog.Fatal(err)
 	}
 	glog.V(1).Infof("Extracting images from %s", url.String())
-	ie.url = url
+	ie.docUrl = url
 
 	utils.IncrementCounterNS("doc", "ParsedDoc")
 
@@ -84,10 +84,12 @@ func (ie *ImageExtractor) ProcessNode(n *html.Node) {
 
 	if interested {
 		glog.V(1).Infof("%s===== %+v", displayPath, *n)
-		glog.V(1).Info(pu.GetDisplayDescendants(n))
+		if n.FirstChild != nil {
+			glog.V(1).Info(pu.GetDisplayDescendants(n, false))
+		}
 	} else {
 		glog.V(2).Infof("%s===== %+v", displayPath, *n)
-		glog.V(2).Info(pu.GetDisplayDescendants(n))
+		glog.V(2).Info(pu.GetDisplayDescendants(n, false))
 	}
 
 	if n.DataAtom.String() == "img" {
@@ -153,7 +155,7 @@ func (ie *ImageExtractor) FilImageUrl(n *html.Node, imgEle *pb.ImageElement) {
 		glog.V(1).Infof("Image Element has no src")
 	case nil:
 		if len(src) != 0 {
-			srcUrl, urlErr = pu.GetAbsUrl(ie.url, src)
+			srcUrl, urlErr = pu.GetAbsUrl(ie.docUrl, src)
 			if urlErr != nil {
 				glog.Fatal(urlErr)
 			}
@@ -170,7 +172,7 @@ func (ie *ImageExtractor) FilImageUrl(n *html.Node, imgEle *pb.ImageElement) {
 	switch err {
 	case nil:
 		if len(dataSrc) != 0 {
-			dataSrcUrl, urlErr = pu.GetAbsUrl(ie.url, dataSrc)
+			dataSrcUrl, urlErr = pu.GetAbsUrl(ie.docUrl, dataSrc)
 			if urlErr != nil {
 				glog.Fatal(urlErr)
 			}
@@ -210,6 +212,11 @@ func (ie *ImageExtractor) FilImageUrl(n *html.Node, imgEle *pb.ImageElement) {
 		utils.IncrementCounterNS("img", "url-not-set")
 	}
 
+	imgGroupInfos := make([]*pb.ImageGroupInfo, 0)
+	if n.Parent != nil && n.Parent.DataAtom.String() == "picture" {
+		imgGroupInfos = ie.GetPictureSources(n.Parent)
+	}
+
 	srcSet, err := pu.GetAttributeValue(n, "srcset")
 	switch err {
 	case nil:
@@ -229,12 +236,6 @@ func (ie *ImageExtractor) FilImageUrl(n *html.Node, imgEle *pb.ImageElement) {
 	case pu.ErrAttrNotFound:
 	default:
 		glog.Fatal(err)
-
-	}
-
-	var imgSrcEles []*pb.ImageSrcEle
-	if n.Parent != nil && n.Parent.DataAtom.String() == "picture" {
-		imgSrcEles = ie.GetPictureSources(n.Parent)
 	}
 
 	var srcSetFinal string
@@ -248,49 +249,92 @@ func (ie *ImageExtractor) FilImageUrl(n *html.Node, imgEle *pb.ImageElement) {
 		}
 	}
 	if len(srcSetFinal) > 0 {
-		if len(imgSrcEles) > 0 {
-			glog.V(1).Infof("picture-srcset-unresolved: %s", dataSrcSet)
+		if len(imgGroupInfos) > 0 {
+			glog.V(1).Infof("picture-srcset-unresolved: %s", srcSetFinal)
+		} else {
+			imgGroupInfo := &pb.ImageGroupInfo{}
+			imgGroupInfo.ImageSources = ie.ParseSrcSet(srcSetFinal)
+			imgGroupInfos = append(imgGroupInfos, imgGroupInfo)
 		}
+	}
+	if len(imgGroupInfos) > 0 {
+		imgEle.ImageGroups = imgGroupInfos
 	}
 }
 
-func (ie *ImageExtractor) GetPictureSources(n *html.Node) []*pb.ImageSrcEle {
-	imgSrcEles := make([]*pb.ImageSrcEle, 0)
+func (ie *ImageExtractor) GetPictureSources(n *html.Node) []*pb.ImageGroupInfo {
+	if n.DataAtom.String() != "picture" {
+		glog.Fatal("Shouldn't be here, this is just for picture")
+	}
+	glog.V(1).Infof("Picture tag:\n%s", pu.GetLongDisplayNode(n))
+	glog.V(1).Infof("Picture tag children:\n%s", pu.GetDisplayDescendants(n, true))
+	imgGroupInfos := make([]*pb.ImageGroupInfo, 0)
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		glog.V(1).Infof("Picture child tag:\n%s", pu.GetLongDisplayNode(c))
 		if c.DataAtom.String() == "source" {
-			imgSrcEle := &pb.ImageSrcEle{}
-			glog.V(1).Infof("Getting source node:\n%s",
-				pu.GetDisplayAttributes(c))
-			imgSrcEles = append(imgSrcEles, imgSrcEle)
-			for _, a := range c.Attr {
-				if a.Key == "srcset" {
-					imgSrcEle.Url = a.Val
-					eles, err := pu.ParseSrcSet(a.Val)
-					if err != nil {
-						glog.Fatal("%s", a.Val, err)
-					}
-					if len(eles) == 0 {
-						glog.V(1).Info("Empty srcset")
-					}
-					for _, ele := range eles {
-						glog.V(1).Infof("Getting src:\n%s",
-							proto.MarshalTextString(ele))
-					}
-				} else if a.Key == "sizes" {
-					imgSrcEle.SizeDesc = a.Val
-				} else {
-					utils.IncrementCounterNS(
-						"source",
-						fmt.Sprintf("attr_%s", a.Key))
-				}
-			}
-			if len(imgSrcEle.GetUrl()) == 0 {
-				utils.IncrementCounterNS("source", "srcset-missing")
-			}
-			if len(imgSrcEle.GetSizeDesc()) == 0 {
-				utils.IncrementCounterNS("source", "media-missing")
-			}
+			imgGroupInfo := ie.GetImageGroupFromSource(c)
+			imgGroupInfos = append(imgGroupInfos, imgGroupInfo)
 		}
+	}
+	if len(imgGroupInfos) == 0 {
+		glog.V(1).Infof("Empty source with no urls")
+	}
+	return imgGroupInfos
+}
+
+func (ie *ImageExtractor) GetImageGroupFromSource(n *html.Node) *pb.ImageGroupInfo {
+	imgGroupInfo := &pb.ImageGroupInfo{}
+	glog.V(1).Infof("Getting source node:\n%s", pu.GetDisplayAttributes(n))
+	srcSet := ""
+	dataSrcSet := ""
+	for _, a := range n.Attr {
+		if a.Key == "type" {
+			imgGroupInfo.Type = a.Val
+		} else if a.Key == "media" {
+			imgGroupInfo.Media = a.Val
+		} else if a.Key == "srcset" {
+			srcSet = a.Val
+		} else if a.Key == "data-srcset" {
+			dataSrcSet = a.Val
+		}
+		utils.IncrementCounterNS(
+			"source",
+			fmt.Sprintf("attr_%s", a.Key))
+	}
+	var srcSetEles, dataSrcSetEles []*pb.ImageSrcEle
+	if len(srcSet) > 0 {
+		srcSetEles = ie.ParseSrcSet(srcSet)
+	}
+	if len(dataSrcSet) > 0 {
+		dataSrcSetEles = ie.ParseSrcSet(dataSrcSet)
+	}
+	if len(srcSetEles) > 0 && len(dataSrcSetEles) > 0 {
+		utils.IncrementCounterNS(
+			"source",
+			"srcset-unresolved")
+	} else {
+		if len(srcSetEles) > 0 {
+			imgGroupInfo.ImageSources = srcSetEles
+		} else if len(dataSrcSetEles) > 0 {
+			imgGroupInfo.ImageSources = dataSrcSetEles
+		}
+	}
+	glog.V(1).Infof("Getting image group info from source:\n%s",
+		proto.MarshalTextString(imgGroupInfo))
+	return imgGroupInfo
+}
+
+func (ie *ImageExtractor) ParseSrcSet(srcset string) []*pb.ImageSrcEle {
+	imgSrcEles, err := pu.ParseSrcSet(srcset)
+	if err != nil {
+		glog.Fatal(err)
+	}
+	for _, imgSrcEle := range imgSrcEles {
+		imgUrl, urlErr := pu.GetAbsUrl(ie.docUrl, imgSrcEle.GetUrl())
+		if urlErr != nil {
+			glog.Fatal(urlErr)
+		}
+		imgSrcEle.Url = imgUrl.String()
 	}
 	return imgSrcEles
 }

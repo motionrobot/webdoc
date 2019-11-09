@@ -83,6 +83,21 @@ func main() {
 					matchedImgEle = imgEle
 					break
 				}
+				for _, group := range imgEle.GetImageGroups() {
+					for _, srcEle := range group.GetImageSources() {
+						if srcEle.GetUrl() == result.GetImageUrl() {
+							matchedImgEle = imgEle
+							utils.IncrementCounterNS("result", "image-url-srcset-matched")
+							break
+						}
+					}
+					if matchedImgEle != nil {
+						break
+					}
+				}
+				if matchedImgEle != nil {
+					break
+				}
 			}
 			if matchedImgEle != nil {
 				glog.V(0).Infof("Image Found:%s",

@@ -10,13 +10,19 @@ message ImageSrcEle {
   string media = 3;
 }
 
+message ImageGroupInfo {
+  string type = 1;
+  string media = 2;
+  repeated ImageSrcEle image_sources = 3;
+}
+
 message ImageElement {
   string url = 1;
   string text = 2;
   string alt = 3;
   int32 width = 4;
   int32 height = 5;
-  repeated ImageSrcEle src_set = 6;
+  repeated ImageGroupInfo image_groups = 6;
 }
 
 message CompositeDoc {

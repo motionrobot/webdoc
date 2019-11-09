@@ -103,21 +103,26 @@ func GetDisplayAttribute(attr html.Attribute, level int) string {
 	return b.String()
 }
 
+func BuildDisplayAttributes(node *html.Node, b *strings.Builder, level int) {
+	for _, attr := range node.Attr {
+		BuildDisplayAttribute(attr, b, level)
+	}
+}
+
 func GetDisplayAttributes(node *html.Node) string {
 	var b strings.Builder
 	b.Grow(32)
-	for _, attr := range node.Attr {
-		BuildDisplayAttribute(attr, &b, 0)
-	}
+	BuildDisplayAttributes(node, &b, 0)
 	return b.String()
 }
 
 func ParseSrcSet(srcset string) ([]*pb.ImageSrcEle, error) {
 	imgSrcEles := make([]*pb.ImageSrcEle, 0)
-	segments := strings.Split(strings.TrimSpace(srcset), ", ")
+	segments := strings.Split(strings.TrimSpace(srcset), ",")
 	for _, segment := range segments {
-		segs := strings.Split(segment, " ")
+		segs := strings.Split(strings.TrimSpace(segment), " ")
 		if len(segs) > 2 {
+			glog.V(0).Infof("mal-formatted segments: %s", segment)
 			return nil, ErrAttrMalFormatted
 		}
 		imgSrcEle := &pb.ImageSrcEle{}
@@ -153,6 +158,46 @@ func GetAbsUrl(baseUrl *url.URL, ref string) (*url.URL, error) {
 		glog.V(1).Infof("Absolute URL is %s", resultUrl.String())
 	}
 	return resultUrl, nil
+}
+
+// Nodes
+func BuildDisplayNode(node *html.Node, b *strings.Builder, level int, long bool) {
+	fmt.Fprintf(b, "%v ", node.Type)
+	switch node.Type {
+	case html.ElementNode:
+		fmt.Fprintf(b, "<%s>(%s)", node.DataAtom, node.Data)
+	case html.TextNode:
+		fmt.Fprintf(b, "<%s>(%s)", node.DataAtom, node.Data)
+	default:
+		fmt.Fprintf(b, "<%s>(%s)", node.DataAtom, node.Data)
+	}
+	if long {
+		fmt.Fprint(b, "\n")
+		BuildDisplayAttributes(node, b, 1)
+	} else {
+		class := GetAttribute(node, "class")
+		if class != nil {
+			fmt.Fprintf(b, "c:\"%s\" ", class.Val)
+		}
+		id := GetAttribute(node, "id")
+		if id != nil {
+			fmt.Fprintf(b, "id:\"%s\" ", id.Val)
+		}
+	}
+}
+
+func GetDisplayNode(node *html.Node) string {
+	var b strings.Builder
+	b.Grow(32)
+	BuildDisplayNode(node, &b, 0, false)
+	return b.String()
+}
+
+func GetLongDisplayNode(node *html.Node) string {
+	var b strings.Builder
+	b.Grow(32)
+	BuildDisplayNode(node, &b, 0, true)
+	return b.String()
 }
 
 // Ancestors and descendents
@@ -206,59 +251,28 @@ func GetDisplayAncestors(n *html.Node) string {
 	return GetDisplayNodePath(ancestors)
 }
 
-func BuildDisplayNode(node *html.Node, b *strings.Builder) {
-	fmt.Fprintf(b, "%v ", node.Type)
-	switch node.Type {
-	case html.ElementNode:
-		fmt.Fprintf(b, "<%s>(%s)", node.DataAtom, node.Data)
-	case html.TextNode:
-		fmt.Fprintf(b, "<%s>(%s)", node.DataAtom, node.Data)
-	default:
-		fmt.Fprintf(b, "<%s>(%s)", node.DataAtom, node.Data)
-	}
-	class := GetAttribute(node, "class")
-	if class != nil {
-		fmt.Fprintf(b, "c:\"%s\" ", class.Val)
-	}
-	id := GetAttribute(node, "id")
-	if id != nil {
-		fmt.Fprintf(b, "id:\"%s\" ", id.Val)
-	}
-}
-
-func GetDisplayNode(node *html.Node) string {
-	var b strings.Builder
-	b.Grow(32)
-	BuildDisplayNode(node, &b)
-	return b.String()
-}
-
 func GetDisplayNodePath(path []*html.Node) string {
 	var b strings.Builder
 	b.Grow(32)
 	for _, node := range path {
-		BuildDisplayNode(node, &b)
+		BuildDisplayNode(node, &b, 0, false)
 		fmt.Fprintf(&b, "->")
 	}
 	return b.String()
 }
 
-func BuildDisplayDescendants(node *html.Node, b *strings.Builder) {
-	BuildDisplayDescendantsLevel(node, b, 0)
-}
-
-func BuildDisplayDescendantsLevel(node *html.Node, b *strings.Builder, level int) {
+func BuildDisplayDescendants(node *html.Node, b *strings.Builder, level int, long bool) {
 	fmt.Fprintf(b, strings.Repeat("++", level))
-	BuildDisplayNode(node, b)
+	BuildDisplayNode(node, b, level, long)
 	fmt.Fprintf(b, "\n")
 	for c := node.FirstChild; c != nil; c = c.NextSibling {
-		BuildDisplayDescendantsLevel(c, b, level+1)
+		BuildDisplayDescendants(c, b, level+1, long)
 	}
 }
 
-func GetDisplayDescendants(node *html.Node) string {
+func GetDisplayDescendants(node *html.Node, long bool) string {
 	var b strings.Builder
 	b.Grow(32)
-	BuildDisplayDescendants(node, &b)
+	BuildDisplayDescendants(node, &b, 0, long)
 	return b.String()
 }
