@@ -11,6 +11,7 @@ import (
 	"golang.org/x/net/html"
 	"io"
 	"net/url"
+	"strings"
 )
 
 var (
@@ -69,6 +70,8 @@ func (ie *ImageExtractor) GetDoc() *pb.CompositeDoc {
 func (ie *ImageExtractor) ProcessNode(n *html.Node) {
 	displayPath := pu.GetDisplayAncestors(n)
 	interested := false
+	var err error
+	var noscriptNode *html.Node
 
 	if n.DataAtom.String() == "img" {
 		glog.V(1).Infof("Found img tag")
@@ -80,16 +83,21 @@ func (ie *ImageExtractor) ProcessNode(n *html.Node) {
 		glog.V(1).Infof("Found picture tag")
 		utils.IncrementCounterNS("picture", "all")
 		interested = true
+	} else if n.DataAtom.String() == "noscript" {
+		noscriptNode, err = ie.ProcessNoscriptNode(n)
+		if err != nil {
+			glog.Fatal(err)
+		}
 	}
 
 	if interested {
 		glog.V(1).Infof("%s===== %+v", displayPath, *n)
 		if n.FirstChild != nil {
-			glog.V(1).Info(pu.GetDisplayDescendants(n, false))
+			glog.V(1).Info(pu.GetDisplayDescendants(n, 2, false))
 		}
 	} else {
 		glog.V(2).Infof("%s===== %+v", displayPath, *n)
-		glog.V(2).Info(pu.GetDisplayDescendants(n, false))
+		glog.V(2).Info(pu.GetDisplayDescendants(n, 2, false))
 	}
 
 	if n.DataAtom.String() == "img" {
@@ -140,8 +148,12 @@ func (ie *ImageExtractor) ProcessNode(n *html.Node) {
 			proto.MarshalTextString(imgEle))
 	}
 
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		ie.ProcessNode(c)
+	if noscriptNode != nil {
+		ie.ProcessNode(noscriptNode)
+	} else {
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			ie.ProcessNode(c)
+		}
 	}
 }
 
@@ -262,12 +274,37 @@ func (ie *ImageExtractor) FilImageUrl(n *html.Node, imgEle *pb.ImageElement) {
 	}
 }
 
+func (ie *ImageExtractor) ProcessNoscriptNode(n *html.Node) (*html.Node, error) {
+	if n.DataAtom.String() != "noscript" {
+		glog.Fatal("Shouldn't be here, this is just for picture")
+	}
+	if n.FirstChild == nil {
+		return nil, nil
+	}
+	if n.FirstChild != n.LastChild {
+		utils.IncrementCounterNS("noscript", "multiple-child")
+		return nil, nil
+	}
+	if n.FirstChild.Type != html.TextNode {
+		utils.IncrementCounterNS("noscript", "non-text-child")
+		return nil, nil
+	}
+	r := strings.NewReader(n.FirstChild.Data)
+	doc, err := html.Parse(r)
+	if err != nil {
+		utils.IncrementCounterNS("noscript", "expanded-failed")
+	} else {
+		utils.IncrementCounterNS("noscript", "expanded")
+	}
+	return doc, err
+}
+
 func (ie *ImageExtractor) GetPictureSources(n *html.Node) []*pb.ImageGroupInfo {
 	if n.DataAtom.String() != "picture" {
 		glog.Fatal("Shouldn't be here, this is just for picture")
 	}
 	glog.V(1).Infof("Picture tag:\n%s", pu.GetLongDisplayNode(n))
-	glog.V(1).Infof("Picture tag children:\n%s", pu.GetDisplayDescendants(n, true))
+	glog.V(1).Infof("Picture tag children:\n%s", pu.GetDisplayDescendants(n, 2, true))
 	imgGroupInfos := make([]*pb.ImageGroupInfo, 0)
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
 		glog.V(1).Infof("Picture child tag:\n%s", pu.GetLongDisplayNode(c))

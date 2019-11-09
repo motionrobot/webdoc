@@ -16,6 +16,10 @@ var (
 		"serp_scrape_info_file",
 		"",
 		"The input file")
+	debugDocUrlPtr = flag.String(
+		"debug_doc_url",
+		"",
+		"The url to be debugged")
 )
 
 func main() {
@@ -46,6 +50,9 @@ func main() {
 	cdocs := make(map[string]*pb.CompositeDoc)
 	for _, scrapeInfo := range scrapeInfos {
 		for _, result := range scrapeInfo.GetResultPage().GetResults() {
+			if len(*debugDocUrlPtr) > 0 && *debugDocUrlPtr != result.GetUrl() {
+				continue
+			}
 			fn, exist := scrapeInfo.GetCachedFiles()[result.GetPos()]
 			if !exist {
 				utils.IncrementCounterNS("doc", "MissingFile")

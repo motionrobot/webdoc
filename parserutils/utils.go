@@ -165,11 +165,11 @@ func BuildDisplayNode(node *html.Node, b *strings.Builder, level int, long bool)
 	fmt.Fprintf(b, "%v ", node.Type)
 	switch node.Type {
 	case html.ElementNode:
-		fmt.Fprintf(b, "<%s>(%s)", node.DataAtom, node.Data)
+		fmt.Fprintf(b, "<%s>(%s)", node.DataAtom, strings.TrimSpace(node.Data))
 	case html.TextNode:
-		fmt.Fprintf(b, "<%s>(%s)", node.DataAtom, node.Data)
+		fmt.Fprintf(b, "<%s>(%s)", node.DataAtom, strings.TrimSpace(node.Data))
 	default:
-		fmt.Fprintf(b, "<%s>(%s)", node.DataAtom, node.Data)
+		fmt.Fprintf(b, "<%s>(%s)", node.DataAtom, strings.TrimSpace(node.Data))
 	}
 	if long {
 		fmt.Fprint(b, "\n")
@@ -261,18 +261,20 @@ func GetDisplayNodePath(path []*html.Node) string {
 	return b.String()
 }
 
-func BuildDisplayDescendants(node *html.Node, b *strings.Builder, level int, long bool) {
+func BuildDisplayDescendants(node *html.Node, b *strings.Builder, level int, numLevel int, long bool) {
 	fmt.Fprintf(b, strings.Repeat("++", level))
 	BuildDisplayNode(node, b, level, long)
 	fmt.Fprintf(b, "\n")
-	for c := node.FirstChild; c != nil; c = c.NextSibling {
-		BuildDisplayDescendants(c, b, level+1, long)
+	if level+1 < numLevel {
+		for c := node.FirstChild; c != nil; c = c.NextSibling {
+			BuildDisplayDescendants(c, b, level+1, numLevel, long)
+		}
 	}
 }
 
-func GetDisplayDescendants(node *html.Node, long bool) string {
+func GetDisplayDescendants(node *html.Node, numLevel int, long bool) string {
 	var b strings.Builder
 	b.Grow(32)
-	BuildDisplayDescendants(node, &b, 0, long)
+	BuildDisplayDescendants(node, &b, 0, numLevel, long)
 	return b.String()
 }
