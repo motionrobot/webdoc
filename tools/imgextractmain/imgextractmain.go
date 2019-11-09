@@ -9,6 +9,7 @@ import (
 	"github.com/motionrobot/webdoc/extractor"
 	pu "github.com/motionrobot/webdoc/parserutils"
 	pb "github.com/motionrobot/webdoc/proto"
+	"net/url"
 )
 
 var (
@@ -84,15 +85,19 @@ func main() {
 			glog.V(0).Infof("Composite doc from cached file %s:\n%s",
 				scrapeInfo.GetCachedFiles()[result.GetPos()],
 				proto.MarshalTextString(cdoc))
+			imgUrl, err := url.Parse(result.GetImageUrl())
+			if err != nil {
+				glog.Fatal(err)
+			}
 			var matchedImgEle *pb.ImageElement
 			for _, imgEle := range cdoc.GetImages() {
-				if imgEle.GetUrl() == result.GetImageUrl() {
+				if UrlMatches(imgUrl, imgEle.GetUrl()) {
 					matchedImgEle = imgEle
 					break
 				}
 				for _, group := range imgEle.GetImageGroups() {
 					for _, srcEle := range group.GetImageSources() {
-						if srcEle.GetUrl() == result.GetImageUrl() {
+						if UrlMatches(imgUrl, srcEle.GetUrl()) {
 							matchedImgEle = imgEle
 							utils.IncrementCounterNS("result", "image-url-srcset-matched")
 							break
@@ -117,4 +122,20 @@ func main() {
 		}
 	}
 	utils.PrintCounters()
+}
+
+func UrlMatches(imgUrl *url.URL, urlStr string) bool {
+	if imgUrl.String() == urlStr {
+		return true
+	}
+	newUrl, err := url.Parse(urlStr)
+	if err != nil {
+		glog.Fatal(err)
+	}
+	if newUrl.Host == imgUrl.Host && newUrl.Path == imgUrl.Path {
+		glog.V(0).Infof("Matching url after dropping query seg: %s vs %s (%s %s) vs (%s %s)",
+			imgUrl.String(), urlStr, imgUrl.Host, imgUrl.Path, newUrl.Host, newUrl.Path)
+		return true
+	}
+	return false
 }
