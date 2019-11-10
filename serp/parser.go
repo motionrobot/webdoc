@@ -127,7 +127,7 @@ func (p *SERPParser) ProcessNode(n *html.Node) {
 			p.resultPage.Results = append(
 				p.resultPage.Results, result)
 
-			glog.V(1).Infof("Result node:\n%s", pu.GetDisplayDescendants(n, false))
+			glog.V(1).Infof("Result node:\n%s", pu.GetDisplayDescendants(n, 2, false))
 			glog.V(1).Infof("Result node:\n%s", displayPath)
 		}
 	} else if p.curResultNode != nil {

@@ -8,8 +8,8 @@ import (
 
 func TestImageSearchParser(t *testing.T) {
 	files := []string{
-		"/Users/zheng/work/data/scraper/srp1.html",
-		"/Users/zheng/work/data/scraper/srp2.html",
+		"/home/zheng/work/data/scraper/srp1.html",
+		"/home/zheng/work/data/scraper/srp2.html",
 	}
 	p := NewSERPParser()
 	for _, fn := range files {
