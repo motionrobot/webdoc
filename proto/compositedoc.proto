@@ -22,7 +22,17 @@ message ImageElement {
   string alt = 3;
   int32 width = 4;
   int32 height = 5;
-  repeated ImageGroupInfo image_groups = 6;
+  enum ImageSource {
+    UNKNOWN = 0;
+    IMG_TAG = 1;
+    PICTURE_TAG = 2;
+    SCRIPT_LD_JSON = 3;
+    META_OG = 4;
+    META_TWITTER = 5;
+    NOSCRIPT_IMG_TAG = 6;
+  }
+  repeated ImageSource sources = 6;
+  repeated ImageGroupInfo image_groups = 10;
 }
 
 message CompositeDoc {

@@ -1,6 +1,7 @@
 package extractor
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"github.com/golang/glog"
@@ -73,20 +74,29 @@ func (ie *ImageExtractor) ProcessNode(n *html.Node) {
 	var err error
 	var noscriptNode *html.Node
 
-	if n.DataAtom.String() == "img" {
+	switch n.DataAtom.String() {
+	case "img":
 		glog.V(1).Infof("Found img tag")
 		interested = true
-	} else if n.DataAtom.String() == "image" {
+	case "image":
 		glog.V(1).Infof("Found image tag")
 		utils.IncrementCounterNS("image", "all")
-	} else if n.DataAtom.String() == "picture" {
+	case "picture":
 		glog.V(1).Infof("Found picture tag")
 		utils.IncrementCounterNS("picture", "all")
 		interested = true
-	} else if n.DataAtom.String() == "noscript" {
+	case "noscript":
 		noscriptNode, err = ie.ProcessNoscriptNode(n)
 		if err != nil {
 			glog.Fatal(err)
+		}
+	case "script":
+		typeStr, err := pu.GetAttributeValue(n, "type")
+		if err == nil && len(typeStr) > 0 {
+			utils.IncrementCounterNS("script", typeStr)
+			if typeStr == "application/ld+json" {
+				ie.ProcessScriptNode(n)
+			}
 		}
 	}
 
@@ -274,9 +284,45 @@ func (ie *ImageExtractor) FilImageUrl(n *html.Node, imgEle *pb.ImageElement) {
 	}
 }
 
+func (ie *ImageExtractor) ProcessScriptNode(n *html.Node) error {
+	if n.DataAtom.String() != "script" {
+		glog.Fatal("Shouldn't be here, this is just for script")
+	}
+	if n.FirstChild == nil {
+		return nil
+	}
+	if n.FirstChild != n.LastChild {
+		utils.IncrementCounterNS("script", "multiple-child")
+		return nil
+	}
+	if n.FirstChild.Type != html.TextNode {
+		utils.IncrementCounterNS("script", "non-text-child")
+		return nil
+	}
+	var v interface{}
+	json.Unmarshal([]byte(n.FirstChild.Data), &v)
+	data := v.(map[string]interface{})
+	for k, v := range data {
+		utils.IncrementCounterNS("script", k)
+		switch v := v.(type) {
+		case string:
+			glog.V(0).Infof("%v %v (string)", k, v)
+		case float64:
+			glog.V(0).Infof("%v %v (float64)", k, v)
+		case []interface{}:
+			glog.V(0).Infof("%v (array):", k)
+			for i, u := range v {
+				glog.V(0).Info("    ", i, u)
+			}
+		default:
+		}
+	}
+	return nil
+}
+
 func (ie *ImageExtractor) ProcessNoscriptNode(n *html.Node) (*html.Node, error) {
 	if n.DataAtom.String() != "noscript" {
-		glog.Fatal("Shouldn't be here, this is just for picture")
+		glog.Fatal("Shouldn't be here, this is just for noscript")
 	}
 	if n.FirstChild == nil {
 		return nil, nil
