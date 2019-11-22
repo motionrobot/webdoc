@@ -1,7 +1,7 @@
 package extractor
 
 import (
-	"encoding/json"
+	// "encoding/json"
 	"flag"
 	"fmt"
 	"github.com/golang/glog"
@@ -179,9 +179,11 @@ func (ie *ImageExtractor) FilImageUrl(n *html.Node, imgEle *pb.ImageElement) {
 		if len(src) != 0 {
 			srcUrl, urlErr = pu.GetAbsUrl(ie.docUrl, src)
 			if urlErr != nil {
-				glog.Fatal(urlErr)
+				glog.Infof("Error in %s", ie.docUrl, urlErr)
+				utils.IncrementCounterNS("img", "src-bad")
+			} else {
+				utils.IncrementCounterNS("img", "src-good")
 			}
-			utils.IncrementCounterNS("img", "src-good")
 		} else {
 			utils.IncrementCounterNS("img", "src-no")
 			glog.V(1).Infof("Image Element has empty src")
@@ -196,9 +198,11 @@ func (ie *ImageExtractor) FilImageUrl(n *html.Node, imgEle *pb.ImageElement) {
 		if len(dataSrc) != 0 {
 			dataSrcUrl, urlErr = pu.GetAbsUrl(ie.docUrl, dataSrc)
 			if urlErr != nil {
-				glog.Fatal(urlErr)
+				glog.Info(urlErr)
+				utils.IncrementCounterNS("img", "data-src-bad")
+			} else {
+				utils.IncrementCounterNS("img", "data-src-good")
 			}
-			utils.IncrementCounterNS("img", "data-src-good")
 		} else {
 			glog.V(1).Infof("Image Element has empty data-src")
 		}
@@ -299,24 +303,27 @@ func (ie *ImageExtractor) ProcessScriptNode(n *html.Node) error {
 		utils.IncrementCounterNS("script", "non-text-child")
 		return nil
 	}
-	var v interface{}
-	json.Unmarshal([]byte(n.FirstChild.Data), &v)
-	data := v.(map[string]interface{})
-	for k, v := range data {
-		utils.IncrementCounterNS("script", k)
-		switch v := v.(type) {
-		case string:
-			glog.V(0).Infof("%v %v (string)", k, v)
-		case float64:
-			glog.V(0).Infof("%v %v (float64)", k, v)
-		case []interface{}:
-			glog.V(0).Infof("%v (array):", k)
-			for i, u := range v {
-				glog.V(0).Info("    ", i, u)
+	/*
+		var v interface{}
+		json.Unmarshal([]byte(n.FirstChild.Data), &v)
+		glog.V(1).Infof("Process script data %s", n.FirstChild.Data)
+		data := v.(map[string]interface{})
+		for k, v := range data {
+			utils.IncrementCounterNS("script", k)
+			switch v := v.(type) {
+			case string:
+				glog.V(0).Infof("%v %v (string)", k, v)
+			case float64:
+				glog.V(0).Infof("%v %v (float64)", k, v)
+			case []interface{}:
+				glog.V(0).Infof("%v (array):", k)
+				for i, u := range v {
+					glog.V(0).Info("    ", i, u)
+				}
+			default:
 			}
-		default:
 		}
-	}
+	*/
 	return nil
 }
 
@@ -408,9 +415,11 @@ func (ie *ImageExtractor) GetImageGroupFromSource(n *html.Node) *pb.ImageGroupIn
 }
 
 func (ie *ImageExtractor) ParseSrcSet(srcset string) []*pb.ImageSrcEle {
-	imgSrcEles, err := pu.ParseSrcSet(srcset)
+	imgSrcEles, err := pu.ParseSrcSet(srcset, ie.docUrl)
 	if err != nil {
-		glog.Fatal(err)
+		glog.Info(err)
+		utils.IncrementCounterNS("srcset", "abandoned")
+		return nil
 	}
 	for _, imgSrcEle := range imgSrcEles {
 		imgUrl, urlErr := pu.GetAbsUrl(ie.docUrl, imgSrcEle.GetUrl())

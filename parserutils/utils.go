@@ -116,14 +116,73 @@ func GetDisplayAttributes(node *html.Node) string {
 	return b.String()
 }
 
-func ParseSrcSet(srcset string) ([]*pb.ImageSrcEle, error) {
+func ParseSingleSrcSetSeg(seg string, docUrl *url.URL) error {
+	return nil
+}
+
+func ParseSrcSet(srcset string, docUrl *url.URL) ([]*pb.ImageSrcEle, error) {
 	imgSrcEles := make([]*pb.ImageSrcEle, 0)
-	segments := strings.Split(strings.TrimSpace(srcset), ",")
-	for _, segment := range segments {
+	// We assume the srcset string is a colon separated list of "url desc"
+	srcset = strings.TrimSpace(srcset)
+	glog.V(1).Infof("srcset is %s", srcset)
+
+	/*
+		pos := 0
+		for pos < len(srcset) {
+			imgSrcEle := &pb.ImageSrcEle{}
+			imgSrcEles = append(imgSrcEles, imgSrcEle)
+			urlEnd := strings.Index(srcset[pos:], " ")
+			if urlEnd < 0 {
+				// There is no size information
+				imgSrcEle.Url = strings.TrimSpace(srcset[pos:])
+				pos = len(srcset)
+			} else {
+				imgSrcEle.Url = strings.TrimSpace(srcset[pos : pos+urlEnd])
+				glog.V(0).Infof("Found url from srcset: [%s] ending %d",
+					imgSrcEle.GetUrl(), pos+urlEnd)
+				descEnd := strings.Index(srcset[pos+urlEnd:], ",")
+				if descEnd > 0 {
+					imgSrcEle.SizeDesc = strings.TrimSpace(srcset[pos+urlEnd : pos+urlEnd+descEnd])
+					pos += urlEnd + descEnd + 1
+				} else {
+					imgSrcEle.SizeDesc = strings.TrimSpace(srcset[pos+urlEnd:])
+					pos = len(srcset)
+				}
+			}
+			glog.V(0).Infof("Finding srcset ele %s", imgSrcEle.String())
+		}
+	*/
+
+	segments := strings.Split(srcset, ",")
+	for idx := 0; idx < len(segments); idx++ {
+		segment := segments[idx]
 		segs := strings.Split(strings.TrimSpace(segment), " ")
 		if len(segs) > 2 {
 			glog.V(0).Infof("mal-formatted segments: %s", segment)
 			return nil, ErrAttrMalFormatted
+		}
+		_, err := GetAbsUrl(docUrl, segs[0])
+		if err != nil {
+			continue
+			// The comma character "," is not always the separator between two srcs,
+			// as a url could contain commas (in the query part)
+			// Maybe this is a part of the url separated by comma
+			if len(imgSrcEles) == 0 || len(imgSrcEles[len(imgSrcEles)-1].GetSizeDesc()) > 0 {
+				glog.Fatal(err)
+			}
+			extended := imgSrcEles[len(imgSrcEles)-1].GetUrl() + "," + segs[0]
+			_, err := GetAbsUrl(docUrl, extended)
+			if err == nil {
+				// OK, concatenating two segments seems to make sense,
+				// let's assume that this segment is part of the url
+				imgSrcEles[len(imgSrcEles)-1].Url = extended
+				if len(segs) == 2 {
+					imgSrcEles[len(imgSrcEles)-1].SizeDesc = segs[1]
+				}
+				continue
+			}
+			glog.Infof("Found strange url in doc %s", docUrl)
+			glog.Fatal(err)
 		}
 		imgSrcEle := &pb.ImageSrcEle{}
 		imgSrcEle.Url = segs[0]
@@ -132,6 +191,7 @@ func ParseSrcSet(srcset string) ([]*pb.ImageSrcEle, error) {
 		}
 		imgSrcEles = append(imgSrcEles, imgSrcEle)
 	}
+
 	return imgSrcEles, nil
 }
 
