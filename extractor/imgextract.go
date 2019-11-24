@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/url"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/motionrobot/utils"
@@ -57,12 +58,11 @@ func (ie *ImageExtractor) Reset() {
 
 func (ie *ImageExtractor) Finalize() {
 	glog.V(0).Infof("File has %d images found", len(ie.cdoc.GetImages()))
-	glog.V(0).Infof("Composite doc:\n%s", proto.MarshalTextString(ie.cdoc))
 	filteredImgEles := make([]*pb.ImageElement, 0)
 	ogImgEle := ie.metaImages["og:"]
 	if ogImgEle != nil {
 	}
-	for _, imgEle := range ie.cdoc.Images {
+	for _, imgEle := range ie.cdoc.GetImages() {
 		isOGImg := HasImageSourceGType(imgEle, pb.ImageElement_META_OG)
 		if isOGImg {
 			utils.IncrementCounterNS("doc", "img_og")
@@ -90,6 +90,7 @@ func (ie *ImageExtractor) Finalize() {
 			} else {
 				glog.V(0).Infof("Nominal image url NONE from srcset:\n%s",
 					proto.MarshalTextString(imgEle))
+				continue
 			}
 		}
 		if len(nominalUrl) > 0 {
@@ -105,6 +106,7 @@ func (ie *ImageExtractor) Finalize() {
 	}
 	ie.cdoc.Images = filteredImgEles
 	utils.IncrementCounterNSBy("doc", "img_extracted", uint32(len(ie.cdoc.GetImages())))
+
 	bucket := len(ie.cdoc.GetImages())
 	if bucket >= 10 {
 		bucket = bucket - bucket%10
@@ -116,6 +118,17 @@ func (ie *ImageExtractor) Finalize() {
 		bucket = 9999
 	}
 	utils.IncrementCounterNS("doc", fmt.Sprintf("img_%04d_extracted", uint32(bucket)))
+
+	scores := make([]int, 0)
+	for _, imgEle := range ie.cdoc.GetImages() {
+		score := ie.ScoreImgEle(imgEle)
+		imgEle.Score = int32(score)
+		scores = append(scores, score)
+	}
+	sort.Slice(ie.cdoc.Images, func(i, j int) bool {
+		return scores[i] > scores[j]
+	})
+	glog.V(0).Infof("Composite doc:\n%s", proto.MarshalTextString(ie.cdoc))
 }
 
 func (ie *ImageExtractor) Parse(r io.Reader, cdoc *pb.CompositeDoc) error {
@@ -594,6 +607,42 @@ func (ie *ImageExtractor) ParseSrcSet(srcset string) []*pb.ImageSrcEle {
 		imgSrcEle.Url = imgUrl.String()
 	}
 	return imgSrcEles
+}
+
+func (ie *ImageExtractor) ScoreImgEle(imgEle *pb.ImageElement) int {
+	score := 0
+	for _, src := range imgEle.GetSources() {
+		switch src {
+		case pb.ImageElement_PICTURE_TAG:
+			score += 10
+		case pb.ImageElement_META_OG:
+			score += 30
+		case pb.ImageElement_NOSCRIPT_IMG_TAG:
+			score += 10
+		}
+	}
+	if len(imgEle.GetUrl()) > 0 {
+		imgUrl, err := url.Parse(imgEle.GetUrl())
+		if err != nil {
+			glog.Fatal("Wrong")
+		}
+		fileType := GetImageFileType(imgUrl)
+		if fileType == ImageFileType_JPG {
+			score += 10
+		}
+	}
+
+	// srcset feature
+	if len(imgEle.GetImageGroups()) > 0 {
+		score += 10
+	}
+	if imgEle.GetWidth() > 0 && imgEle.GetHeight() > 0 {
+		score += 5
+	}
+	if len(imgEle.GetAlt()) > 0 {
+		score += 1
+	}
+	return score
 }
 
 func GetImageFeature(imgEle *pb.ImageElement) []string {

@@ -32,6 +32,7 @@ message ImageElement {
     NOSCRIPT_IMG_TAG = 6;
   }
   repeated ImageSource sources = 6;
+  int32 score = 7;
   repeated ImageGroupInfo image_groups = 10;
 }
 
