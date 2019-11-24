@@ -449,6 +449,19 @@ func (ie *ImageExtractor) ProcessMetaNode(n *html.Node) bool {
 			imgEle.Url = content
 		}
 		utils.IncrementCounterNS("meta:og", "imageurl")
+	case "og:image:secure_url":
+		content, err := pu.GetAttributeValue(n, "content")
+		if err != nil {
+			return false
+		}
+		if len(content) == 0 {
+			glog.V(0).Infof("Nil og secure url content:\n%s", pu.GetLongDisplayNode(n))
+		} else {
+			if len(imgEle.Url) == 0 {
+				imgEle.Url = content
+			}
+		}
+		utils.IncrementCounterNS("meta:og", "imageurl")
 	case "og:image:alt":
 		alt, err := pu.GetAttributeValue(n, "content")
 		if err != nil {
