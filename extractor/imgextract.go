@@ -596,6 +596,51 @@ func (ie *ImageExtractor) ParseSrcSet(srcset string) []*pb.ImageSrcEle {
 	return imgSrcEles
 }
 
+func GetImageFeature(imgEle *pb.ImageElement) []string {
+	features := make([]string, 0)
+	// The source features
+	for _, src := range imgEle.GetSources() {
+		sourceFeature := false
+		switch src {
+		case pb.ImageElement_PICTURE_TAG:
+			sourceFeature = true
+		case pb.ImageElement_META_OG:
+			sourceFeature = true
+		case pb.ImageElement_NOSCRIPT_IMG_TAG:
+			sourceFeature = true
+		default:
+			sourceFeature = false
+		}
+		if sourceFeature {
+			feature := fmt.Sprintf("SOURCE_%d", src)
+			features = append(features, feature)
+		}
+	}
+	if len(imgEle.GetUrl()) > 0 {
+		imgUrl, err := url.Parse(imgEle.GetUrl())
+		if err != nil {
+			glog.Fatal("Wrong")
+		}
+		fileType := GetImageFileType(imgUrl)
+		if fileType != ImageFileType_UNKNOWN {
+			feature := fmt.Sprintf("FILETYPE_%d", fileType)
+			features = append(features, feature)
+		}
+	}
+
+	// srcset feature
+	if len(imgEle.GetImageGroups()) > 0 {
+		features = append(features, "srcset")
+	}
+	if imgEle.GetWidth() > 0 && imgEle.GetHeight() > 0 {
+		features = append(features, "size")
+	}
+	if len(imgEle.GetAlt()) > 0 {
+		features = append(features, "alt")
+	}
+	return features
+}
+
 func AddImageSourceType(imgEle *pb.ImageElement, srcType pb.ImageElement_ImageSource) bool {
 	if HasImageSourceGType(imgEle, srcType) {
 		return false
@@ -605,7 +650,7 @@ func AddImageSourceType(imgEle *pb.ImageElement, srcType pb.ImageElement_ImageSo
 }
 
 func HasImageSourceGType(imgEle *pb.ImageElement, srcType pb.ImageElement_ImageSource) bool {
-	for _, src := range imgEle.Sources {
+	for _, src := range imgEle.GetSources() {
 		if src == srcType {
 			return true
 		}
