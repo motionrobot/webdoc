@@ -119,14 +119,12 @@ func (ie *ImageExtractor) Finalize() {
 	}
 	utils.IncrementCounterNS("doc", fmt.Sprintf("img_%04d_extracted", uint32(bucket)))
 
-	scores := make([]int, 0)
 	for _, imgEle := range ie.cdoc.GetImages() {
 		score := ie.ScoreImgEle(imgEle)
 		imgEle.Score = int32(score)
-		scores = append(scores, score)
 	}
 	sort.Slice(ie.cdoc.Images, func(i, j int) bool {
-		return scores[i] > scores[j]
+		return ie.cdoc.GetImages()[i].GetScore() > ie.cdoc.GetImages()[j].GetScore()
 	})
 	glog.V(0).Infof("Composite doc:\n%s", proto.MarshalTextString(ie.cdoc))
 }
