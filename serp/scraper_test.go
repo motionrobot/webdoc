@@ -7,8 +7,8 @@ import (
 
 func TestImageSearchScraper(t *testing.T) {
 	files := []string{
-		"/Users/zhengsun/work/data/imagescraper/srp1.html",
-		"/Users/zhengsun/work/data/imagescraper/srp2.html",
+		"/Users/zhengsun/work/data/image/explicit_image_safari/serp/scraped_imageSearch_desktop_en-US_0000000.html",
+		"/Users/zhengsun/work/data/image/explicit_image_safari/serp/scraped_imageSearch_desktop_en-US_0000001.html",
 	}
 	p := NewSERPScraper()
 	defer p.Close()

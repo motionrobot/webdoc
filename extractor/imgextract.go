@@ -1,7 +1,7 @@
 package extractor
 
 import (
-	// "encoding/json"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"github.com/golang/glog"
@@ -23,6 +23,10 @@ var (
 		"image_crawl_info_file",
 		"",
 		"The input file")
+	filterNoTextImagesPtr = flag.Bool(
+		"filter_no_text_images",
+		false,
+		"Filter images with no surrounding text")
 )
 
 type ImageFileType int32
@@ -58,7 +62,7 @@ func (ie *ImageExtractor) Reset() {
 
 func (ie *ImageExtractor) Finalize() {
 	glog.V(0).Infof("File has %d images found", len(ie.cdoc.GetImages()))
-	filteredImgEles := make([]*pb.ImageElement, 0)
+	acceptedImgEles := make([]*pb.ImageElement, 0)
 	ogImgEle := ie.metaImages["og:"]
 	if ogImgEle != nil {
 	}
@@ -66,6 +70,13 @@ func (ie *ImageExtractor) Finalize() {
 		isOGImg := HasImageSourceGType(imgEle, pb.ImageElement_META_OG)
 		if isOGImg {
 			utils.IncrementCounterNS("doc", "img_og")
+		}
+		if *filterNoTextImagesPtr && !isOGImg {
+			if len(imgEle.GetText()) == 0 && len(imgEle.GetAlt()) == 0 {
+				glog.Infof("Removing image with no text:\n%s",
+					proto.MarshalTextString(imgEle))
+				continue
+			}
 		}
 		var nominalUrl string
 		if len(imgEle.GetUrl()) > 0 {
@@ -100,11 +111,11 @@ func (ie *ImageExtractor) Finalize() {
 				MergeImgEles(ogImgEle, imgEle)
 				glog.V(0).Infof("Merged og ele: %s", ogImgEle.String())
 			} else {
-				filteredImgEles = append(filteredImgEles, imgEle)
+				acceptedImgEles = append(acceptedImgEles, imgEle)
 			}
 		}
 	}
-	ie.cdoc.Images = filteredImgEles
+	ie.cdoc.Images = acceptedImgEles
 	utils.IncrementCounterNSBy("doc", "img_extracted", uint32(len(ie.cdoc.GetImages())))
 
 	bucket := len(ie.cdoc.GetImages())
@@ -168,7 +179,7 @@ func (ie *ImageExtractor) ProcessNode(n *html.Node) {
 		utils.IncrementCounterNS("image", "all")
 	case "picture":
 		if ie.pictureNode != nil {
-			glog.Fatal("Found noscript node inside noscript node")
+			glog.Fatal("Found picture node inside picture node")
 		}
 		ie.pictureNode = n
 		glog.V(1).Infof("Found picture tag")
@@ -370,7 +381,7 @@ func (ie *ImageExtractor) FillImageUrl(n *html.Node, imgEle *pb.ImageElement) {
 
 	var srcSetFinal string
 	if len(srcSet) > 0 && len(dataSrcSet) > 0 {
-		glog.V(1).Infof("srcset-unresolved: %s", dataSrcSet)
+		glog.V(1).Infof("srcset-unresolved:\n%s\n%s", srcSet, dataSrcSet)
 	} else {
 		if len(srcSet) > 0 {
 			srcSetFinal = srcSet
@@ -407,40 +418,79 @@ func (ie *ImageExtractor) ProcessScriptNode(n *html.Node) error {
 		utils.IncrementCounterNS("script", "non-text-child")
 		return nil
 	}
-	/*
-		var v interface{}
-		json.Unmarshal([]byte(n.FirstChild.Data), &v)
-		glog.V(1).Infof("Process script data %s", n.FirstChild.Data)
-		data := v.(map[string]interface{})
-		for k, v := range data {
-			utils.IncrementCounterNS("script", k)
-			switch v := v.(type) {
-			case string:
-				glog.V(0).Infof("%v %v (string)", k, v)
-			case float64:
-				glog.V(0).Infof("%v %v (float64)", k, v)
-			case []interface{}:
-				glog.V(0).Infof("%v (array):", k)
-				for i, u := range v {
-					glog.V(0).Info("    ", i, u)
+
+	imgURLs := make([]string, 0)
+	var description string
+	var result map[string]interface{}
+	json.Unmarshal([]byte(n.FirstChild.Data), &result)
+	glog.V(1).Infof("Process script data %s", n.FirstChild.Data)
+	for k, v := range result {
+		utils.IncrementCounterNS("script", k)
+		switch v := v.(type) {
+		case string:
+			if k == "image" {
+				glog.V(1).Infof("script image %v", v)
+				imgURLs = append(imgURLs, v)
+			} else {
+				glog.V(1).Infof("script %v %v (string)", k, v)
+				if k == "description" {
+					description = v
 				}
-			default:
+			}
+		case float64:
+			glog.V(1).Infof("script %v %v (float64)", k, v)
+		case []interface{}:
+			glog.V(1).Infof("script %v (array):", k)
+			if k == "image" {
+				for i, u := range v {
+					switch u := u.(type) {
+					case string:
+						glog.V(1).Infof("    %s %d %s", k, i, u)
+						imgURLs = append(imgURLs, u)
+					default:
+						glog.V(1).Info("    ", i, u)
+					}
+				}
+			}
+		default:
+		}
+	}
+	if len(imgURLs) > 0 {
+		glog.V(1).Infof("Found image urls from script tag with description [%s]: %v",
+			description, imgURLs)
+		imgEle := &pb.ImageElement{}
+		imgEle.Sources = append(imgEle.Sources, pb.ImageElement_SCRIPT_LD_JSON)
+		if len(description) > 0 {
+			imgEle.Text = description
+		}
+		if len(imgURLs) == 1 {
+			imgEle.Url = imgURLs[0]
+		} else {
+			imgEle.ImageGroups = make([]*pb.ImageGroupInfo, 1)
+			imgEle.ImageGroups[0] = &pb.ImageGroupInfo{}
+			imgEle.ImageGroups[0].ImageSources = make([]*pb.ImageSrcEle, len(imgURLs))
+			for idx, imgURL := range imgURLs {
+				imgEle.ImageGroups[0].ImageSources[idx] = &pb.ImageSrcEle{
+					Url: imgURL}
 			}
 		}
-	*/
+		glog.V(1).Infof("Getting from script image ele %s", proto.MarshalTextString(imgEle))
+		ie.cdoc.Images = append(ie.cdoc.Images, imgEle)
+	}
 	return nil
 }
 
 func (ie *ImageExtractor) ProcessMetaNode(n *html.Node) bool {
 	property, err := pu.GetAttributeValue(n, "property")
 	if err != nil {
+		glog.V(1).Info(err)
 		return false
 	}
-	if strings.Index(property, "og:") != 0 {
-		// Right now we only look at og images
-		return false
-	}
+	// Right now we only look at og images
 	metaSrc := "og:"
+	if strings.Index(property, metaSrc) != 0 {
+		return false
+	}
 	imgEle, exist := ie.metaImages[metaSrc]
 	if !exist {
 		imgEle = &pb.ImageElement{}
@@ -452,12 +502,15 @@ func (ie *ImageExtractor) ProcessMetaNode(n *html.Node) bool {
 	case "og:image":
 		content, err := pu.GetAttributeValue(n, "content")
 		if err != nil {
+			glog.V(1).Info(err)
 			return false
 		}
 		if len(content) == 0 {
 			glog.V(0).Infof("Nil og content:\n%s", pu.GetLongDisplayNode(n))
 		} else {
-			imgEle.Url = content
+			if len(imgEle.Url) == 0 {
+				imgEle.Url = content
+			}
 		}
 		utils.IncrementCounterNS("meta:og", "imageurl")
 	case "og:image:secure_url":
@@ -617,12 +670,14 @@ func (ie *ImageExtractor) ScoreImgEle(imgEle *pb.ImageElement) int {
 			score += 30
 		case pb.ImageElement_NOSCRIPT_IMG_TAG:
 			score += 10
+		case pb.ImageElement_SCRIPT_LD_JSON:
+			score += 10
 		}
 	}
 	if len(imgEle.GetUrl()) > 0 {
 		imgUrl, err := url.Parse(imgEle.GetUrl())
 		if err != nil {
-			glog.Fatal("Wrong")
+			return 0
 		}
 		fileType := GetImageFileType(imgUrl)
 		if fileType == ImageFileType_JPG {
@@ -655,6 +710,8 @@ func GetImageFeature(imgEle *pb.ImageElement) []string {
 			sourceFeature = true
 		case pb.ImageElement_NOSCRIPT_IMG_TAG:
 			sourceFeature = true
+		case pb.ImageElement_SCRIPT_LD_JSON:
+			sourceFeature = true
 		default:
 			sourceFeature = false
 		}
@@ -666,12 +723,13 @@ func GetImageFeature(imgEle *pb.ImageElement) []string {
 	if len(imgEle.GetUrl()) > 0 {
 		imgUrl, err := url.Parse(imgEle.GetUrl())
 		if err != nil {
-			glog.Fatal("Wrong")
-		}
-		fileType := GetImageFileType(imgUrl)
-		if fileType != ImageFileType_UNKNOWN {
-			feature := fmt.Sprintf("FILETYPE_%d", fileType)
-			features = append(features, feature)
+			glog.Warning(err)
+		} else {
+			fileType := GetImageFileType(imgUrl)
+			if fileType != ImageFileType_UNKNOWN {
+				feature := fmt.Sprintf("FILETYPE_%d", fileType)
+				features = append(features, feature)
+			}
 		}
 	}
 
@@ -731,7 +789,7 @@ func ResolveSrcAndDataSrc(srcUrl *url.URL, dataSrcUrl *url.URL) *url.URL {
 		srcUrl.String(), dataSrcUrl.String(),
 		srcUrl.Path, dataSrcUrl.Path)
 	utils.IncrementCounterNS("img", "src-unresolved")
-	return nil
+	return srcUrl
 }
 
 func GetImageFileType(srcUrl *url.URL) ImageFileType {
